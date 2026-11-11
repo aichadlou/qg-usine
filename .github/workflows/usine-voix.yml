@@ -1,0 +1,56 @@
+# Fabrique la voix off d'une vidéo avec ElevenLabs, puis range voix.mp3 + words.json dans le dossier de la vidéo.
+# Démarre tout seul quand un script.txt (ou voix.json) change sur une branche video-…, ou à la main (onglet Actions).
+name: Usine - Voix
+on:
+  push:
+    branches: ["video-**"]
+    paths: ["usine/src/videos/*/script.txt", "usine/src/videos/*/voix.json"]
+  workflow_dispatch:
+    inputs:
+      id: { description: "Nom du dossier de la vidéo (ex. 2026-11-12-pont)", required: true }
+      force: { description: "Refaire la voix même si le texte n'a pas changé", type: boolean, default: false }
+permissions:
+  contents: write
+concurrency:
+  group: voix-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  voix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Trouver les vidéos concernées
+        id: quoi
+        env:
+          ID: ${{ inputs.id }}
+        run: |
+          if [ -n "$ID" ]; then ids="$ID"; else
+            ids=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^usine/src/videos/[a-z0-9-]+/(script\.txt|voix\.json)$' | cut -d/ -f4 | sort -u | tr '\n' ' ')
+          fi
+          echo "$ids" | grep -Eq '^[a-z0-9 -]*$' || { echo "Nom de vidéo invalide"; exit 1; }
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"; echo "Vidéos : $ids"
+      - name: Voix ElevenLabs
+        if: steps.quoi.outputs.ids != ''
+        working-directory: usine
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          IDS: ${{ steps.quoi.outputs.ids }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          for id in $IDS; do
+            [ -f "src/videos/$id/script.txt" ] || { echo "Pas de script.txt pour $id : ignoré"; continue; }
+            if [ "$FORCE" = "true" ]; then node scripts/voix.mjs "$id" --force; else node scripts/voix.mjs "$id"; fi
+          done
+      - name: Ranger la voix dans le dépôt
+        if: steps.quoi.outputs.ids != ''
+        run: |
+          git config user.name "Usine QG"; git config user.email "actions@users.noreply.github.com"
+          git add usine/src/videos
+          if git diff --cached --quiet; then echo "Rien de nouveau."; else
+            git commit -m "Voix off : ${{ steps.quoi.outputs.ids }}"; git push
+          fi

@@ -1,0 +1,85 @@
+# Rend une vidéo en 12 morceaux en parallèle (gratuit : dépôt public), les colle, ajoute le son et publie le MP4.
+# Démarre tout seul quand le fichier rendu.txt d'une vidéo change sur une branche video-…, ou à la main (onglet Actions).
+# rendu.txt contient la qualité voulue : 720 (essai rapide) ou 1080 (version finale).
+name: Usine - Rendu
+on:
+  push:
+    branches: ["video-**"]
+    paths: ["usine/src/videos/*/rendu.txt"]
+  workflow_dispatch:
+    inputs:
+      id: { description: "Nom du dossier de la vidéo (ex. modele)", required: true }
+      qualite: { description: "Qualité", type: choice, options: ["720", "1080"], default: "720" }
+permissions:
+  contents: write
+concurrency:
+  group: rendu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      id: ${{ steps.quoi.outputs.id }}
+      qualite: ${{ steps.quoi.outputs.qualite }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - name: Quelle vidéo, quelle qualité
+        id: quoi
+        env:
+          ID: ${{ inputs.id }}
+          Q: ${{ inputs.qualite }}
+        run: |
+          if [ -n "$ID" ]; then id="$ID"; q="$Q"; else
+            id=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^usine/src/videos/[a-z0-9-]+/rendu\.txt$' | cut -d/ -f4 | head -1)
+            q=$(grep -oE '1080|720' "usine/src/videos/$id/rendu.txt" | head -1 || true)
+          fi
+          echo "$id" | grep -Eq '^[a-z0-9-]+$' || { echo "Aucune vidéo à rendre (nom invalide ou rendu.txt introuvable)"; exit 1; }
+          [ -f "usine/src/videos/$id/index.tsx" ] || { echo "Le dossier usine/src/videos/$id n'a pas de index.tsx"; exit 1; }
+          [ "$q" = "1080" ] || q=720
+          echo "id=$id" >> "$GITHUB_OUTPUT"; echo "qualite=$q" >> "$GITHUB_OUTPUT"; echo "Vidéo $id en ${q}p"
+  morceau:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: usine/package-lock.json }
+      - name: Installer
+        working-directory: usine
+        run: npm ci --no-audit --no-fund && npx remotion browser ensure
+      - name: Rendre le morceau ${{ matrix.part }}/12
+        working-directory: usine
+        run: node scripts/liste.mjs && node scripts/rendu.mjs "${{ needs.plan.outputs.id }}" --qualite "${{ needs.plan.outputs.qualite }}" --part ${{ matrix.part }} --sur 12
+      - uses: actions/upload-artifact@v4
+        with: { name: "part-${{ matrix.part }}", path: "usine/out/part-*.mp4", retention-days: 2, if-no-files-found: error }
+  final:
+    needs: [plan, morceau]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: "part-*", path: usine/out, merge-multiple: true }
+      - name: Coller les morceaux et ajouter le son
+        working-directory: usine
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          [ "$(ls out/part-*.mp4 | wc -l)" = "12" ] || { echo "Il manque des morceaux"; exit 1; }
+          bash scripts/assemble.sh "${{ needs.plan.outputs.id }}" out "out/${{ needs.plan.outputs.id }}-${{ needs.plan.outputs.qualite }}p.mp4"
+      - uses: actions/upload-artifact@v4
+        with: { name: "video-${{ needs.plan.outputs.id }}-${{ needs.plan.outputs.qualite }}p", path: "usine/out/${{ needs.plan.outputs.id }}-*.mp4", retention-days: 30 }
+      - name: Publier la vidéo (page Releases du dépôt)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="video-${{ needs.plan.outputs.id }}-${{ needs.plan.outputs.qualite }}p-${{ github.run_number }}"
+          gh release create "$tag" "usine/out/${{ needs.plan.outputs.id }}-${{ needs.plan.outputs.qualite }}p.mp4" --target "${{ github.sha }}" \
+            --title "${{ needs.plan.outputs.id }} (${{ needs.plan.outputs.qualite }}p)" --notes "Rendu automatique de l'usine. Branche : ${{ github.ref_name }}."
+          echo "Vidéo publiée : https://github.com/${{ github.repository }}/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"
