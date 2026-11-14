@@ -1,0 +1,28 @@
+# Fait dire la même phrase par plusieurs voix de base, pour choisir en écoutant.
+# À lancer à la main : onglet Actions > « Usine - Essai de voix » > Run workflow.
+name: Usine - Essai de voix
+on:
+  workflow_dispatch:
+    inputs:
+      phrase: { description: "Phrase à faire dire (laisser vide = phrase du pont)", required: false }
+      voix: { description: "Codes de voix séparés par des virgules (vide = la sélection de l'usine)", required: false }
+permissions:
+  contents: read
+jobs:
+  essai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Fabriquer les essais
+        working-directory: usine
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PHRASE: ${{ inputs.phrase }}
+          VOIX: ${{ inputs.voix }}
+        run: |
+          if [ -n "$VOIX" ]; then node scripts/essai-voix.mjs "$PHRASE" --voix "$VOIX"; else node scripts/essai-voix.mjs "$PHRASE"; fi
+      - uses: actions/upload-artifact@v4
+        with: { name: essais-de-voix, path: usine/out/voix/*, retention-days: 7, if-no-files-found: error }

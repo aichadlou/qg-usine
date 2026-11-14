@@ -60,7 +60,7 @@ const Inner: React.FC<{ id: number; kit: Kit }> = ({ id, kit }) => {
     grade: new GradeEffect(GRADES.day, GRADE_STRENGTH.day),
     grain: new GrainEffect({ amount: 0.025, cellPx: 1.5 }), // film grain, OFF by default (inputProps post.grain): the reference measures no grain and it quadruples the file size
   }), [camera, scene]);
-  useEffect(() => () => fx.ink.dispose(), [fx]);
+  useEffect(() => () => { try { InkPass.prototype.dispose.call(fx.ink); } catch { /* rien à libérer */ } }, [fx]); // <primitive dispose={null}> efface la méthode de l'objet : on appelle celle de la classe
   const post = useMemo(() => (
     <EffectComposer multisampling={((getInputProps() as {msaa?: number}).msaa ?? 4)}>
       {on.ink ? <primitive object={fx.ink} dispose={null} /> : null}
