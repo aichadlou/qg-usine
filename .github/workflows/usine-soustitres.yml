@@ -51,7 +51,9 @@ jobs:
       - name: Installer
         if: steps.quoi.outputs.ids != ''
         working-directory: usine
-        run: npm ci --no-audit --no-fund
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          npm ci --no-audit --no-fund
 
       # whisper.cpp et son modèle pèsent lourd : on les garde d'une fois sur l'autre pour aller vite.
       - name: Réutiliser l'outil d'écoute
