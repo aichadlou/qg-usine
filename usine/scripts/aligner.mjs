@@ -2,7 +2,7 @@
 // mot par mot, pour que les sous-titres tombent au bon moment. Gratuit : tout se passe sur GitHub, sans clé.
 // Si src/videos/<id>/script.txt existe, les mots écrits par Aicha sont gardés tels quels (orthographe, accents) :
 // l'écoute ne sert qu'à donner l'heure de chaque mot.
-// Écrit src/videos/<id>/words.json et src/videos/<id>/voix.sha (empreinte du mp3 : on ne réécoute pas pour rien).
+// Écrit src/videos/<id>/words.json et src/videos/<id>/soustitres.sha (empreinte du mp3 : on ne réécoute pas pour rien).
 // Usage : node scripts/aligner.mjs <id> [--force] [--modele base|small] [--faux fichier.json]
 import fs from "node:fs";
 import path from "node:path";
@@ -31,7 +31,7 @@ const script = fs.existsSync(fScript)
   : "";
 
 const sha = crypto.createHash("sha256").update(fs.readFileSync(fSon)).update("|" + script).digest("hex").slice(0, 16);
-const fSha = path.join(dir, "voix.sha");
+const fSha = path.join(dir, "soustitres.sha"); // à ne pas confondre avec voix.sha, qui appartient à la voix fabriquée par ElevenLabs
 if (!args.includes("--force") && fs.existsSync(fSha) && fs.readFileSync(fSha, "utf8").trim() === sha && fs.existsSync(path.join(dir, "words.json"))) {
   console.log("Minutage déjà à jour pour ce son et ce texte : rien à refaire.");
   process.exit(0);

@@ -30,6 +30,8 @@ jobs:
   soustitres:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Un mp3 rangé par l'usine elle-même (voix ElevenLabs) a déjà son minutage exact : inutile de le réécouter.
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.author.name != 'Usine QG'
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 2 }
@@ -78,7 +80,7 @@ jobs:
         if: steps.quoi.outputs.ids != ''
         run: |
           git config user.name "Usine QG"; git config user.email "actions@users.noreply.github.com"
-          git add usine/src/videos/*/words.json usine/src/videos/*/voix.sha
+          git add usine/src/videos/*/words.json usine/src/videos/*/soustitres.sha
           if git diff --cached --quiet; then echo "Rien de nouveau."; else
             git commit -q -m "Sous-titres calés : ${{ steps.quoi.outputs.ids }}"
             git pull --rebase -q && git push
