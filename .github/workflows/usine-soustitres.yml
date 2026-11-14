@@ -18,6 +18,7 @@ on:
         type: choice
         options: ["small", "base"]
         default: "small"
+      force: { description: "Refaire le minutage même s'il est déjà à jour", type: boolean, default: false }
 
 permissions:
   contents: write
@@ -71,9 +72,11 @@ jobs:
         env:
           IDS: ${{ steps.quoi.outputs.ids }}
           MODELE: ${{ inputs.modele || 'small' }}
+          FORCE: ${{ inputs.force }}
         run: |
           for id in $IDS; do
-            node scripts/aligner.mjs "$id" --modele "$MODELE" || exit 1
+            if [ "$FORCE" = "true" ]; then node scripts/aligner.mjs "$id" --modele "$MODELE" --force || exit 1
+            else node scripts/aligner.mjs "$id" --modele "$MODELE" || exit 1; fi
           done
 
       - name: Ranger le minutage dans le dépôt
