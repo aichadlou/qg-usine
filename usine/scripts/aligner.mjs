@@ -40,6 +40,11 @@ if (!args.includes("--force") && fs.existsSync(fSha) && fs.readFileSync(fSha, "u
 /** « L'été, à Paris ! » -> « lete a paris » : pour comparer des mots sans se tromper sur les accents. */
 export const nu = (m) => m.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
 
+// L'écoute annonce les mots un peu trop tôt : mesuré à 0,22 s d'avance en moyenne sur un essai dont on connaissait
+// le minutage exact (voix ElevenLabs, 14 mots). On rattrape 0,15 s — un sous-titre légèrement en retard se voit moins
+// qu'un sous-titre en avance.
+export const AVANCE = 0.15;
+
 /** Colle les morceaux rendus par l'écoute en mots entiers (l'écoute découpe parfois « in-croy-able »). */
 export const motsEcoutes = (captions) => {
   const out = [];
@@ -117,7 +122,8 @@ if (opt("faux")) {
 if (!entendus.length) stop("rien n'a été entendu dans ce son (fichier vide ou silencieux ?).");
 
 const ecrits = script ? script.split(" ").filter((w) => nu(w)) : [];
-const mots = ecrits.length ? recaler(ecrits, entendus) : entendus.map((m) => ({ w: m.w, s: +m.s.toFixed(3), e: +m.e.toFixed(3) }));
+const bruts = ecrits.length ? recaler(ecrits, entendus) : entendus.map((m) => ({ w: m.w, s: +m.s.toFixed(3), e: +m.e.toFixed(3) }));
+const mots = bruts.map((m) => ({ w: m.w, s: +(m.s + AVANCE).toFixed(3), e: +(m.e + AVANCE).toFixed(3) }));
 fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(mots));
 fs.writeFileSync(fSha, sha + "\n");
 
