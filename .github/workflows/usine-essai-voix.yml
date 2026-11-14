@@ -7,7 +7,7 @@ on:
       phrase: { description: "Phrase à faire dire (laisser vide = phrase du pont)", required: false }
       voix: { description: "Codes de voix séparés par des virgules (vide = la sélection de l'usine)", required: false }
 permissions:
-  contents: read
+  contents: write
 jobs:
   essai:
     runs-on: ubuntu-latest
@@ -26,3 +26,13 @@ jobs:
           if [ -n "$VOIX" ]; then node scripts/essai-voix.mjs "$PHRASE" --voix "$VOIX"; else node scripts/essai-voix.mjs "$PHRASE"; fi
       - uses: actions/upload-artifact@v4
         with: { name: essais-de-voix, path: usine/out/voix/*, retention-days: 7, if-no-files-found: error }
+      - name: Ranger les essais dans la branche essais-de-voix (pour les écouter facilement)
+        run: |
+          git config user.name "Usine QG"; git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan essais-de-voix
+          git rm -rq --cached . || true
+          mkdir -p essais && rm -rf essais/voix && cp -r usine/out/voix essais/voix
+          git add -f essais/voix
+          git commit -q -m "Essais de voix du $(date -u '+%d/%m/%Y %H:%M') UTC"
+          git push -f origin essais-de-voix
+          echo "Essais rangés : https://github.com/${{ github.repository }}/tree/essais-de-voix/essais/voix" >> "$GITHUB_STEP_SUMMARY"
