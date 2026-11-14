@@ -1,0 +1,84 @@
+# Écoute un voix.mp3 déposé à la main (par exemple fabriqué sur le site ElevenLabs) et calcule le minutage
+# mot par mot des sous-titres. Gratuit : tout se passe sur GitHub, aucune clé, aucun compte.
+# Démarre tout seul quand un fichier son est déposé dans le dossier d'une vidéo ; ou à la main (onglet Actions).
+name: Usine - Sous-titres
+
+on:
+  push:
+    branches: [main, "video-**"]
+    paths:
+      - "usine/src/videos/*/voix.mp3"
+      - "usine/src/videos/*/voix.m4a"
+      - "usine/src/videos/*/voix.wav"
+  workflow_dispatch:
+    inputs:
+      id: { description: "Nom du dossier de la vidéo (ex. 2026-11-14-pont)", required: true }
+      modele:
+        description: "Qualité de l'écoute (small = mieux, base = plus rapide)"
+        type: choice
+        options: ["small", "base"]
+        default: "small"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: soustitres-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  soustitres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: usine/package-lock.json }
+
+      - name: Trouver les vidéos concernées
+        id: quoi
+        env:
+          ID: ${{ inputs.id }}
+        run: |
+          if [ -n "$ID" ]; then ids="$ID"; else
+            ids=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^usine/src/videos/[a-z0-9-]+/voix\.(mp3|m4a|wav)$' | cut -d/ -f4 | sort -u | tr '\n' ' ')
+          fi
+          echo "$ids" | grep -Eq '^[a-z0-9 -]*$' || { echo "Nom de vidéo invalide"; exit 1; }
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"; echo "Vidéos : $ids"
+
+      - name: Installer
+        if: steps.quoi.outputs.ids != ''
+        working-directory: usine
+        run: npm ci --no-audit --no-fund
+
+      # whisper.cpp et son modèle pèsent lourd : on les garde d'une fois sur l'autre pour aller vite.
+      - name: Réutiliser l'outil d'écoute
+        if: steps.quoi.outputs.ids != ''
+        uses: actions/cache@v4
+        with:
+          path: usine/.whisper
+          key: whisper-1.5.5-${{ inputs.modele || 'small' }}-${{ runner.os }}
+
+      - name: Écouter le son et caler les mots
+        if: steps.quoi.outputs.ids != ''
+        working-directory: usine
+        env:
+          IDS: ${{ steps.quoi.outputs.ids }}
+          MODELE: ${{ inputs.modele || 'small' }}
+        run: |
+          for id in $IDS; do
+            node scripts/aligner.mjs "$id" --modele "$MODELE" || exit 1
+          done
+
+      - name: Ranger le minutage dans le dépôt
+        if: steps.quoi.outputs.ids != ''
+        run: |
+          git config user.name "Usine QG"; git config user.email "actions@users.noreply.github.com"
+          git add usine/src/videos/*/words.json usine/src/videos/*/voix.sha
+          if git diff --cached --quiet; then echo "Rien de nouveau."; else
+            git commit -q -m "Sous-titres calés : ${{ steps.quoi.outputs.ids }}"
+            git pull --rebase -q && git push
+            echo "Sous-titres calés pour : ${{ steps.quoi.outputs.ids }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
