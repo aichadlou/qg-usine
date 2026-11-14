@@ -22,7 +22,9 @@ const texte = fs.readFileSync(fScript, "utf8").split("\n").filter((l) => !l.trim
 if (!texte) stop("script.txt est vide.");
 if (texte.length > 2500) stop(`script trop long (${texte.length} caractères, maximum 2500 : un Short fait 900 à 1100).`);
 const reg = fs.existsSync(path.join(dir, "voix.json")) ? JSON.parse(fs.readFileSync(path.join(dir, "voix.json"), "utf8")) : {};
-const voiceId = process.env.ELEVENLABS_VOICE_ID || "";
+// On garde la première ligne utile du secret, sans espaces ni guillemets (un copier-coller ramène parfois du vide ou un retour à la ligne).
+const propre = (v) => (v || "").split("\n").map((x) => x.trim().replace(/^["'<]+|[">']+$/g, "")).filter(Boolean)[0] || "";
+const voiceId = propre(process.env.ELEVENLABS_VOICE_ID);
 const corps = {
   text: texte,
   model_id: reg.modele || "eleven_multilingual_v2",
@@ -54,9 +56,9 @@ export const mots = (al) => {
 let data;
 if (simu) data = JSON.parse(fs.readFileSync(simu, "utf8"));
 else {
-  const key = process.env.ELEVENLABS_API_KEY || "";
+  const key = propre(process.env.ELEVENLABS_API_KEY);
   if (!key) stop("le secret ELEVENLABS_API_KEY est absent (GitHub : Settings > Secrets and variables > Actions).");
-  if (!voiceId) stop("le secret ELEVENLABS_VOICE_ID est absent (GitHub : Settings > Secrets and variables > Actions).");
+  if (!/^[A-Za-z0-9]{15,40}$/.test(voiceId)) stop(voiceId ? "l'identifiant de voix (secret ELEVENLABS_VOICE_ID) n'a pas la bonne forme : il doit contenir UN SEUL code d'environ 20 lettres et chiffres, sans espace ni retour a la ligne." : "le secret ELEVENLABS_VOICE_ID est absent (GitHub : Settings > Secrets and variables > Actions).");
   console.log(`Demande à ElevenLabs : ${texte.length} caractères, modèle ${corps.model_id}.`);
   let r, essai = 0;
   for (;;) {
